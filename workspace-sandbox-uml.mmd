@@ -1,0 +1,128 @@
+---
+title: AgentScope Workspace & Sandbox Architecture (UML)
+---
+classDiagram
+    direction TB
+
+    class WorkspaceBase {
+        <<abstract>>
+        +workspace_id : str
+        +workdir : str
+        +is_alive : bool
+        -_backend : BackendBase
+        +initialize()*
+        +close()*
+        +get_instructions()*
+        +add_mcp(mcp_client)*
+        +remove_mcp(name)*
+        +get_backend() BackendBase
+        +list_tools() list~ToolBase~
+        +list_mcps() list~MCPClient~
+        +list_skills() list~Skill~
+        +offload_context(sid, msgs) str
+        +offload_tool_result(sid, r) str
+    }
+
+    class LocalWorkspace {
+        local filesystem, no sandbox
+        +initialize()
+        +close()
+        +get_instructions()
+    }
+
+    class SandboxedWorkspaceBase {
+        <<abstract>>
+        template method around an
+        in-sandbox MCP gateway
+        +gateway_port : int
+        -_gateway_home : str
+        -_gateway : GatewayClient
+        #_provision_backend()*
+        #_teardown_backend()*
+        #_bootstrap_commands() list~str~
+        +initialize()
+        +close()
+    }
+
+    class DockerWorkspace {
+        container lifecycle (docker SDK)
+        image ships gateway preinstalled
+        #_provision_backend()
+        #_teardown_backend()
+    }
+
+    class K8sWorkspace {
+        Pod + Service lifecycle
+        apt-get bootstraps gateway
+        #_provision_backend()
+        #_teardown_backend()
+        #_bootstrap_commands()
+    }
+
+    class E2bWorkspace
+    class DaytonaWorkspace
+    class OpenSandboxWorkspace
+    class AppleContainerWorkspace
+    class BubblewrapWorkspace
+
+    class GatewayClient {
+        facade for the MCP gateway
+        running INSIDE the sandbox
+    }
+
+    class BackendBase {
+        <<abstract>>
+        filesystem + subprocess interface
+        consumed by the 6 builtin tools
+        +_path_module = posixpath
+        +os_name = posix
+        +exec_shell(cmd)* ExecResult
+        +read_file(path)* bytes
+        +write_file(path, data)*
+        +join_path(path, paths) str
+        +list_dir(path, recursive)
+        +delete_path(path)
+        +file_exists(path)
+        +write_stream(path, stream)
+    }
+
+    class LocalBackend {
+        _path_module = os.path
+    }
+    class DockerBackend
+    class K8sBackend
+    class E2bBackend
+    class DaytonaBackend
+    class OpenSandboxBackend
+    class AppleContainerBackend
+    class BubblewrapBackend
+
+    WorkspaceBase <|-- LocalWorkspace : local
+    WorkspaceBase <|-- SandboxedWorkspaceBase : sandboxed
+    SandboxedWorkspaceBase <|-- DockerWorkspace
+    SandboxedWorkspaceBase <|-- K8sWorkspace
+    SandboxedWorkspaceBase <|-- E2bWorkspace
+    SandboxedWorkspaceBase <|-- DaytonaWorkspace
+    SandboxedWorkspaceBase <|-- OpenSandboxWorkspace
+    SandboxedWorkspaceBase <|-- AppleContainerWorkspace
+    SandboxedWorkspaceBase <|-- BubblewrapWorkspace
+
+    BackendBase <|-- LocalBackend
+    BackendBase <|-- DockerBackend
+    BackendBase <|-- K8sBackend
+    BackendBase <|-- E2bBackend
+    BackendBase <|-- DaytonaBackend
+    BackendBase <|-- OpenSandboxBackend
+    BackendBase <|-- AppleContainerBackend
+    BackendBase <|-- BubblewrapBackend
+
+    WorkspaceBase o-- "1" BackendBase : _backend holds
+    SandboxedWorkspaceBase *-- "0..1" GatewayClient : _gateway
+
+    LocalWorkspace ..> LocalBackend : creates eagerly
+    DockerWorkspace ..> DockerBackend : creates in _provision_backend()
+    K8sWorkspace ..> K8sBackend : creates in _provision_backend()
+
+    note for WorkspaceBase "Workspace = SDK-facing abstraction: skills/, MCPs,<br/>6 builtin tools, offload (sessions/, data/).<br/>list_tools() binds each tool to the active<br/>backend so agent I/O runs in the sandbox."
+    note for BackendBase "Sandbox = isolated execution environment.<br/>3 abstract primitives (exec_shell / read_file /<br/>write_file); all other ops derive from them."
+    note for SandboxedWorkspaceBase "initialize() template:<br/>1 _provision_backend() - start sandbox, bind _backend<br/>2 _bootstrap_commands() - install gateway venv<br/>3 launch gateway + health poll"
